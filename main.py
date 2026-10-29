@@ -75,12 +75,17 @@ face_model_points =np.array([
     (28.9,-28.9,-24.1)
 ],dtype =np.float64)
 
-#eye center calibration depth
-EYE_DEPTH =-35.0
 
-#calibrated eye centers in face coordinates
-left_eye_center_face =None
-right_eye_center_face =None
+#gaze ray length
+GAZE_RAY_LENGTH =120.0
+
+#calibrated eye centers in local face coordinates
+left_eye_center_local =None
+right_eye_center_local =None
+
+#current mediapipe face coordinate system
+face_origin =None
+face_basis =None
 
 #store current pose information
 pose_ready =False
@@ -88,6 +93,10 @@ current_left_eye_pixel =None
 current_right_eye_pixel =None
 rotation_matrix =None
 translation_vector =None
+
+#store current iris pixels
+current_left_iris_pixel =None
+current_right_iris_pixel =None
 
 #3d coordinate axis points
 axis_points =np.array([
@@ -135,33 +144,68 @@ cv2.setWindowProperty(
     cv2.WINDOW_FULLSCREEN
 )
 
-#convert a webcam pixel into a point on the face eye plane
-def pixel_to_face_plane(pixel,eye_depth,rotation_matrix,translation_vector,camera_matrix):
 
-    #create camera ray from pixel
-    pixel_vector =np.array([
-        pixel[0],
-        pixel[1],
-        1.0
+#convert mediapipe landmark into 3d pixel space
+def landmark_to_3d(landmark,width,height):
+    return np.array([
+        landmark.x*width,
+        landmark.y*height,
+        landmark.z*width
     ],dtype =np.float64)
 
-    #convert pixel into camera direction
-    camera_ray =np.linalg.inv(camera_matrix)@pixel_vector
-    camera_ray =camera_ray/np.linalg.norm(camera_ray)
 
-    #convert camera ray into face coordinates
-    face_ray =rotation_matrix.T@camera_ray
+#create local coordinate system from stable face landmarks
+def create_face_coordinate_system(face_landmarks,width,height):
 
-    #find camera origin in face coordinates
-    face_origin =-rotation_matrix.T@translation_vector.reshape(3)
+    #get stable face points
+    nose =landmark_to_3d(
+        face_landmarks[NOSE_TIP],
+        width,
+        height
+    )
 
-    #find intersection with eye depth plane
-    scale =(eye_depth-face_origin[2])/face_ray[2]
+    left_outer =landmark_to_3d(
+        face_landmarks[LEFT_EYE_OUTER],
+        width,
+        height
+    )
 
-    #calculate point in face coordinates
-    face_point =face_origin+scale*face_ray
+    right_outer =landmark_to_3d(
+        face_landmarks[RIGHT_EYE_OUTER],
+        width,
+        height
+    )
 
-    return face_point
+    chin =landmark_to_3d(
+        face_landmarks[CHIN],
+        width,
+        height
+    )
+
+    #create horizontal face axis
+    x_axis =right_outer-left_outer
+    x_axis =x_axis/np.linalg.norm(x_axis)
+
+    #temporary vertical direction
+    y_temp =chin-nose
+    y_temp =y_temp/np.linalg.norm(y_temp)
+
+    #create forward face axis
+    z_axis =np.cross(x_axis,y_temp)
+    z_axis =z_axis/np.linalg.norm(z_axis)
+
+    #rebuild vertical axis
+    y_axis =np.cross(z_axis,x_axis)
+    y_axis =y_axis/np.linalg.norm(y_axis)
+
+    #combine axes into rotation matrix
+    basis =np.column_stack((
+        x_axis,
+        y_axis,
+        z_axis
+    ))
+
+    return nose,basis
 
 #keep webcam running
 while True:
@@ -210,9 +254,29 @@ while True:
     
         face_landmarks =result.face_landmarks[0]
 
+        #create mediapipe face coordinate system
+        face_origin,face_basis =create_face_coordinate_system(
+            face_landmarks,
+            width,
+            height
+        )
+
         #get iris centers
         left_iris =face_landmarks[LEFT_IRIS[0]]
         right_iris =face_landmarks[RIGHT_IRIS[0]]
+
+        #convert iris landmarks into 3d points
+        left_iris_3d =landmark_to_3d(
+            left_iris,
+            width,
+            height
+        )
+
+        right_iris_3d =landmark_to_3d(
+            right_iris,
+            width,
+            height
+        )
 
         #get left eye landmarks
         left_eye_left =face_landmarks[LEFT_EYE_LEFT]
@@ -256,16 +320,111 @@ while True:
             right_eye_bottom.y
         )/4
 
-        #convert observed centers to pixels
-        current_left_eye_pixel =(
-            int(left_eye_center_x*width),
-            int(left_eye_center_y*height)
-        )
+        #calculate observed eye centers in 3d
+        left_eye_observed_3d =(
+            landmark_to_3d(left_eye_left,width,height)+
+            landmark_to_3d(left_eye_right,width,height)+
+            landmark_to_3d(left_eye_top,width,height)+
+            landmark_to_3d(left_eye_bottom,width,height)
+        )/4
 
-        current_right_eye_pixel =(
-            int(right_eye_center_x*width),
-            int(right_eye_center_y*height)
-        )
+        right_eye_observed_3d =(
+            landmark_to_3d(right_eye_left,width,height)+
+            landmark_to_3d(right_eye_right,width,height)+
+            landmark_to_3d(right_eye_top,width,height)+
+            landmark_to_3d(right_eye_bottom,width,height)
+        )/4
+
+        #reconstruct calibrated eye centers
+        if left_eye_center_local is not None and right_eye_center_local is not None:
+
+            left_eye_center_3d =face_origin+(
+                face_basis@left_eye_center_local
+            )
+
+            right_eye_center_3d =face_origin+(
+                face_basis@right_eye_center_local
+            )
+
+            #convert iris positions into local face coordinates
+            left_iris_local =face_basis.T@(
+                left_iris_3d-face_origin
+            )
+
+            right_iris_local =face_basis.T@(
+                right_iris_3d-face_origin
+            )
+
+            #calculate gaze directions relative to face
+            left_gaze_local =left_iris_local-left_eye_center_local
+            right_gaze_local =right_iris_local-right_eye_center_local
+
+            #normalize gaze directions
+            left_gaze_local =left_gaze_local/np.linalg.norm(left_gaze_local)
+            right_gaze_local =right_gaze_local/np.linalg.norm(right_gaze_local)
+
+            #convert gaze directions back into camera coordinates
+            left_gaze_3d =face_basis@left_gaze_local
+            right_gaze_3d =face_basis@right_gaze_local
+
+            #convert observed centers to pixels
+            left_eye_center_2d =(
+                int(left_eye_center_3d[0]),
+                int(left_eye_center_3d[1])
+            )
+
+            right_eye_center_2d =(
+                int(right_eye_center_3d[0]),
+                int(right_eye_center_3d[1])
+            )
+
+            #ray display length
+            ray_length =100
+
+            #calculate gaze endpoints
+            left_ray_end =(
+                int(left_eye_center_3d[0]+left_gaze_3d[0]*ray_length),
+                int(left_eye_center_3d[1]+left_gaze_3d[1]*ray_length)
+            )
+
+            right_ray_end =(
+                int(right_eye_center_3d[0]+right_gaze_3d[0]*ray_length),
+                int(right_eye_center_3d[1]+right_gaze_3d[1]*ray_length)
+            )
+
+            #draw eye circles
+            cv2.circle(
+                frame,
+                left_eye_center_2d,
+                14,
+                (255,255,0),
+                2
+            )
+
+            cv2.circle(
+                frame,
+                right_eye_center_2d,
+                14,
+                (0,255,255),
+                2
+            )
+
+            #draw gaze rays
+            cv2.line(
+                frame,
+                left_eye_center_2d,
+                left_ray_end,
+                (255,255,0),
+                3
+            )
+
+            cv2.line(
+                frame,
+                right_eye_center_2d,
+                right_ray_end,
+                (0,255,255),
+                3
+            )
 
         #calculate left eye ratios
         left_horizontal =(left_iris.x-left_eye_left.x)/(left_eye_right.x-left_eye_left.x)
@@ -375,7 +534,6 @@ while True:
 
         #draw head coordinate system
         if success:
-
             #convert rotation vector into rotation matrix
             rotation_matrix,_ =cv2.Rodrigues(rotation_vector)
 
@@ -390,71 +548,6 @@ while True:
                 camera_matrix,
                 distortion_coefficients
             )
-
-            #draw calibrated virtual eye centers
-            if left_eye_center_face is not None and right_eye_center_face is not None:
-
-                calibrated_eye_centers =np.array([
-                    left_eye_center_face,
-                    right_eye_center_face
-                ],dtype =np.float64)
-
-                #project calibrated eye centers onto webcam
-                projected_eye_centers,_ =cv2.projectPoints(
-                    calibrated_eye_centers,
-                    rotation_vector,
-                    translation_vector,
-                    camera_matrix,
-                    distortion_coefficients
-                )
-
-                #get projected positions
-                left_eye_center =tuple(
-                    projected_eye_centers[0].ravel().astype(int)
-                )
-
-                right_eye_center =tuple(
-                    projected_eye_centers[1].ravel().astype(int)
-                )
-
-                #draw calibrated left eye center
-                cv2.circle(
-                    frame,
-                    left_eye_center,
-                    7,
-                    (255,255,0),
-                    -1
-                )
-
-                #draw calibrated right eye center
-                cv2.circle(
-                    frame,
-                    right_eye_center,
-                    7,
-                    (0,255,255),
-                    -1
-                )
-
-                #label eye centers
-                cv2.putText(
-                    frame,
-                    "L",
-                    (left_eye_center[0]-10,left_eye_center[1]-10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (255,255,0),
-                    2
-                )
-
-                cv2.putText(
-                    frame,
-                    "R",
-                    (right_eye_center[0]-10,right_eye_center[1]-10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0,255,255),
-                    2
-                )
 
             #get nose point
             nose_x =int(image_points[0][0])
@@ -690,33 +783,20 @@ while True:
     #calibrate eye centers
     if key ==ord("c"):
 
-        if (
-            pose_ready and
-            current_left_eye_pixel is not None and
-            current_right_eye_pixel is not None
-        ):
+        if face_origin is not None and face_basis is not None:
 
-            #convert left eye center into face coordinates
-            left_eye_center_face =pixel_to_face_plane(
-                current_left_eye_pixel,
-                EYE_DEPTH,
-                rotation_matrix,
-                translation_vector,
-                camera_matrix
+            #convert observed eye centers into local face coordinates
+            left_eye_center_local =face_basis.T@(
+                left_eye_observed_3d-face_origin
             )
 
-            #convert right eye center into face coordinates
-            right_eye_center_face =pixel_to_face_plane(
-                current_right_eye_pixel,
-                EYE_DEPTH,
-                rotation_matrix,
-                translation_vector,
-                camera_matrix
+            right_eye_center_local =face_basis.T@(
+                right_eye_observed_3d-face_origin
             )
 
             print("\neye centers calibrated")
-            print("left eye:",left_eye_center_face)
-            print("right eye:",right_eye_center_face)
+            print("left eye:",left_eye_center_local)
+            print("right eye:",right_eye_center_local)
 
     #save calibration point
     elif key ==ord("1"):
