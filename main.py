@@ -10,6 +10,7 @@ import face_tracking
 import gaze_tracking
 import calibration
 import display
+import monitor_tracking
 
 #get screen size
 SCREEN_WIDTH,SCREEN_HEIGHT =display.get_screen_size()
@@ -68,6 +69,7 @@ while True:
     head_pose =None
     face_origin =None
     face_basis =None
+    face_landmarks =None
     current_face_scale =None
 
     #calculate gaze and head position
@@ -133,12 +135,12 @@ while True:
     #default mapped gaze
     screen_gaze =None
 
-    #map gaze to screen
+    #map gaze ray to virtual monitor
     if gaze_data is not None:
 
-        screen_gaze =calibration.map_gaze_to_screen(
-            gaze_data["smooth_yaw"],
-            gaze_data["smooth_pitch"],
+        screen_gaze =monitor_tracking.map_gaze_to_screen(
+            gaze_data["combined_eye_center_3d"],
+            gaze_data["combined_gaze_3d"],
             SCREEN_WIDTH,
             SCREEN_HEIGHT
         )
@@ -150,7 +152,7 @@ while True:
         SCREEN_HEIGHT,
         gaze_data,
         screen_gaze,
-        calibration.is_monitor_ready()
+        monitor_tracking.is_monitor_ready()
     )
 
     #show display
@@ -183,10 +185,10 @@ while True:
 
         if gaze_data is not None:
 
-            calibration.save_monitor_point(
+            monitor_tracking.save_calibration_point(
                 "1",
-                gaze_data["smooth_yaw"],
-                gaze_data["smooth_pitch"]
+                gaze_data["combined_eye_center_3d"],
+                gaze_data["combined_gaze_3d"]
             )
 
     #save monitor top-right
@@ -194,10 +196,10 @@ while True:
 
         if gaze_data is not None:
 
-            calibration.save_monitor_point(
+            monitor_tracking.save_calibration_point(
                 "2",
-                gaze_data["smooth_yaw"],
-                gaze_data["smooth_pitch"]
+                gaze_data["combined_eye_center_3d"],
+                gaze_data["combined_gaze_3d"]
             )
 
     #save monitor bottom-left
@@ -205,10 +207,10 @@ while True:
 
         if gaze_data is not None:
 
-            calibration.save_monitor_point(
+            monitor_tracking.save_calibration_point(
                 "3",
-                gaze_data["smooth_yaw"],
-                gaze_data["smooth_pitch"]
+                gaze_data["combined_eye_center_3d"],
+                gaze_data["combined_gaze_3d"]
             )
 
     #save monitor bottom-right
@@ -216,21 +218,26 @@ while True:
 
         if gaze_data is not None:
 
-            calibration.save_monitor_point(
+            monitor_tracking.save_calibration_point(
                 "4",
-                gaze_data["smooth_yaw"],
-                gaze_data["smooth_pitch"]
+                gaze_data["combined_eye_center_3d"],
+                gaze_data["combined_gaze_3d"]
             )
 
-    #save monitor center
-    elif key ==ord("5"):
+    #calibrate virtual monitor
+    elif key ==ord("m"):
 
-        if gaze_data is not None:
+        if (
+            gaze_data is not None and
+            face_landmarks is not None
+        ):
 
-            calibration.save_monitor_point(
-                "5",
-                gaze_data["smooth_yaw"],
-                gaze_data["smooth_pitch"]
+            monitor_tracking.calibrate_monitor(
+                gaze_data["combined_eye_center_3d"],
+                gaze_data["combined_gaze_3d"],
+                face_landmarks,
+                width,
+                height
             )
 
     #press q to quit

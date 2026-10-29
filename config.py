@@ -79,3 +79,13 @@ AXIS_POINTS =np.array([
     (0.0,50.0,0.0),
     (0.0,0.0,50.0)
 ],dtype =np.float64)
+
+#forehead landmark
+FOREHEAD =10
+
+#virtual monitor dimensions
+MONITOR_WIDTH_CM =60.0
+MONITOR_HEIGHT_CM =40.0
+
+#virtual monitor distance from eyes
+MONITOR_DISTANCE_CM =50.0
