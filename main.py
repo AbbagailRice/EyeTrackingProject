@@ -1,4 +1,7 @@
-#this file opens the webcam and tracks the users eyes and irises using mediapipe
+#this file opens the webcam and tracks the users eyes and irises using mediapipe and open cv
+#it creates a face coordinate system using stable facial landmarks
+#it draws x y and z axes that move with the users head
+
 #it calculates the iris position relative to each eye
 #it prints horizontal and vertical gaze ratios for testing
 #press q to close the webcam and end the program
@@ -28,12 +31,20 @@ RIGHT_EYE_RIGHT =263
 RIGHT_EYE_TOP =386
 RIGHT_EYE_BOTTOM =374
 
+#head pose landmarks
+NOSE_TIP =1
+CHIN =152
+LEFT_EYE_OUTER =33
+RIGHT_EYE_OUTER =263
+LEFT_MOUTH =61
+RIGHT_MOUTH =291
+
 #smoothing settings
 SMOOTHING_FRAMES =5
 
 #webcam display size
-CAM_WIDTH =300
-CAM_HEIGHT =220
+CAM_WIDTH =500
+CAM_HEIGHT =350
 
 #get screen size
 root =tk.Tk()
@@ -47,6 +58,43 @@ calibration_points ={}
 #store recent gaze values
 horizontal_values =[]
 vertical_values =[]
+
+#default gaze values
+smooth_horizontal =0.0
+smooth_vertical =0.0
+quadrant =0
+
+#3d reference face points
+#should approx the shape of a normal human face
+face_model_points =np.array([
+    (0.0,0.0,0.0),
+    (0.0,-63.6,-12.5),
+    (-43.3,32.7,-26.0),
+    (43.3,32.7,-26.0),
+    (-28.9,-28.9,-24.1),
+    (28.9,-28.9,-24.1)
+],dtype =np.float64)
+
+#eye center calibration depth
+EYE_DEPTH =-35.0
+
+#calibrated eye centers in face coordinates
+left_eye_center_face =None
+right_eye_center_face =None
+
+#store current pose information
+pose_ready =False
+current_left_eye_pixel =None
+current_right_eye_pixel =None
+rotation_matrix =None
+translation_vector =None
+
+#3d coordinate axis points
+axis_points =np.array([
+    (50.0,0.0,0.0),
+    (0.0,50.0,0.0),
+    (0.0,0.0,50.0)
+],dtype =np.float64)
 
 #model file path
 model_path ="face_landmarker.task"
@@ -87,6 +135,34 @@ cv2.setWindowProperty(
     cv2.WINDOW_FULLSCREEN
 )
 
+#convert a webcam pixel into a point on the face eye plane
+def pixel_to_face_plane(pixel,eye_depth,rotation_matrix,translation_vector,camera_matrix):
+
+    #create camera ray from pixel
+    pixel_vector =np.array([
+        pixel[0],
+        pixel[1],
+        1.0
+    ],dtype =np.float64)
+
+    #convert pixel into camera direction
+    camera_ray =np.linalg.inv(camera_matrix)@pixel_vector
+    camera_ray =camera_ray/np.linalg.norm(camera_ray)
+
+    #convert camera ray into face coordinates
+    face_ray =rotation_matrix.T@camera_ray
+
+    #find camera origin in face coordinates
+    face_origin =-rotation_matrix.T@translation_vector.reshape(3)
+
+    #find intersection with eye depth plane
+    scale =(eye_depth-face_origin[2])/face_ray[2]
+
+    #calculate point in face coordinates
+    face_point =face_origin+scale*face_ray
+
+    return face_point
+
 #keep webcam running
 while True:
     ret, frame =cap.read()
@@ -98,6 +174,21 @@ while True:
     
     #flip webcam horizontally
     frame =cv2.flip(frame,1)
+    
+    #get frame size
+    height,width,_ =frame.shape
+
+    #create camera matrix
+    focal_length =width
+
+    camera_matrix =np.array([
+        [focal_length,0,width/2],
+        [0,focal_length,height/2],
+        [0,0,1]
+    ],dtype =np.float64)
+
+    #assume no lens distortion
+    distortion_coefficients =np.zeros((4,1))
 
     #convert frame from bgr to rgb
     rgb_frame =cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
@@ -114,9 +205,9 @@ while True:
     #detect facial landmarks
     result =landmarker.detect_for_video(mp_image,timestamp_ms)
 
-     #calculate gaze position
+     #calculate gaze and head position
     if result.face_landmarks:
-        height,width,_ =frame.shape
+    
         face_landmarks =result.face_landmarks[0]
 
         #get iris centers
@@ -134,6 +225,47 @@ while True:
         right_eye_right =face_landmarks[RIGHT_EYE_RIGHT]
         right_eye_top =face_landmarks[RIGHT_EYE_TOP]
         right_eye_bottom =face_landmarks[RIGHT_EYE_BOTTOM]
+
+        #calculate observed left eye center
+        left_eye_center_x =(
+            left_eye_left.x+
+            left_eye_right.x+
+            left_eye_top.x+
+            left_eye_bottom.x
+        )/4
+
+        left_eye_center_y =(
+            left_eye_left.y+
+            left_eye_right.y+
+            left_eye_top.y+
+            left_eye_bottom.y
+        )/4
+
+        #calculate observed right eye center
+        right_eye_center_x =(
+            right_eye_left.x+
+            right_eye_right.x+
+            right_eye_top.x+
+            right_eye_bottom.x
+        )/4
+
+        right_eye_center_y =(
+            right_eye_left.y+
+            right_eye_right.y+
+            right_eye_top.y+
+            right_eye_bottom.y
+        )/4
+
+        #convert observed centers to pixels
+        current_left_eye_pixel =(
+            int(left_eye_center_x*width),
+            int(left_eye_center_y*height)
+        )
+
+        current_right_eye_pixel =(
+            int(right_eye_center_x*width),
+            int(right_eye_center_y*height)
+        )
 
         #calculate left eye ratios
         left_horizontal =(left_iris.x-left_eye_left.x)/(left_eye_right.x-left_eye_left.x)
@@ -204,6 +336,194 @@ while True:
                 else:
                     quadrant =4
 
+        #get head pose image points
+        image_points =np.array([
+            (
+                face_landmarks[NOSE_TIP].x*width,
+                face_landmarks[NOSE_TIP].y*height
+            ),
+            (
+                face_landmarks[CHIN].x*width,
+                face_landmarks[CHIN].y*height
+            ),
+            (
+                face_landmarks[LEFT_EYE_OUTER].x*width,
+                face_landmarks[LEFT_EYE_OUTER].y*height
+            ),
+            (
+                face_landmarks[RIGHT_EYE_OUTER].x*width,
+                face_landmarks[RIGHT_EYE_OUTER].y*height
+            ),
+            (
+                face_landmarks[LEFT_MOUTH].x*width,
+                face_landmarks[LEFT_MOUTH].y*height
+            ),
+            (
+                face_landmarks[RIGHT_MOUTH].x*width,
+                face_landmarks[RIGHT_MOUTH].y*height
+            )
+        ],dtype =np.float64)
+
+        #estimate head rotation and position
+        success,rotation_vector,translation_vector =cv2.solvePnP(
+            face_model_points,
+            image_points,
+            camera_matrix,
+            distortion_coefficients,
+            flags =cv2.SOLVEPNP_ITERATIVE
+        )
+
+        #draw head coordinate system
+        if success:
+
+            #convert rotation vector into rotation matrix
+            rotation_matrix,_ =cv2.Rodrigues(rotation_vector)
+
+            #head pose is ready
+            pose_ready =True
+
+            #project 3d axis points onto webcam
+            projected_axis,_ =cv2.projectPoints(
+                axis_points,
+                rotation_vector,
+                translation_vector,
+                camera_matrix,
+                distortion_coefficients
+            )
+
+            #draw calibrated virtual eye centers
+            if left_eye_center_face is not None and right_eye_center_face is not None:
+
+                calibrated_eye_centers =np.array([
+                    left_eye_center_face,
+                    right_eye_center_face
+                ],dtype =np.float64)
+
+                #project calibrated eye centers onto webcam
+                projected_eye_centers,_ =cv2.projectPoints(
+                    calibrated_eye_centers,
+                    rotation_vector,
+                    translation_vector,
+                    camera_matrix,
+                    distortion_coefficients
+                )
+
+                #get projected positions
+                left_eye_center =tuple(
+                    projected_eye_centers[0].ravel().astype(int)
+                )
+
+                right_eye_center =tuple(
+                    projected_eye_centers[1].ravel().astype(int)
+                )
+
+                #draw calibrated left eye center
+                cv2.circle(
+                    frame,
+                    left_eye_center,
+                    7,
+                    (255,255,0),
+                    -1
+                )
+
+                #draw calibrated right eye center
+                cv2.circle(
+                    frame,
+                    right_eye_center,
+                    7,
+                    (0,255,255),
+                    -1
+                )
+
+                #label eye centers
+                cv2.putText(
+                    frame,
+                    "L",
+                    (left_eye_center[0]-10,left_eye_center[1]-10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255,255,0),
+                    2
+                )
+
+                cv2.putText(
+                    frame,
+                    "R",
+                    (right_eye_center[0]-10,right_eye_center[1]-10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0,255,255),
+                    2
+                )
+
+            #get nose point
+            nose_x =int(image_points[0][0])
+            nose_y =int(image_points[0][1])
+
+            nose_point =(nose_x,nose_y)
+
+            #get projected axis points
+            x_axis =tuple(projected_axis[0].ravel().astype(int))
+            y_axis =tuple(projected_axis[1].ravel().astype(int))
+            z_axis =tuple(projected_axis[2].ravel().astype(int))
+
+            #draw x axis
+            cv2.line(
+                frame,
+                nose_point,
+                x_axis,
+                (0,0,255),
+                3
+            )
+
+            #draw y axis
+            cv2.line(
+                frame,
+                nose_point,
+                y_axis,
+                (0,255,0),
+                3
+            )
+
+            #draw z axis
+            cv2.line(
+                frame,
+                nose_point,
+                z_axis,
+                (255,0,0),
+                3
+            )
+
+            #label axes
+            cv2.putText(
+                frame,
+                "x",
+                x_axis,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0,0,255),
+                2
+            )
+
+            cv2.putText(
+                frame,
+                "y",
+                y_axis,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0,255,0),
+                2
+            )
+
+            cv2.putText(
+                frame,
+                "z",
+                z_axis,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255,0,0),
+                2
+            )
 
         #draw iris center points
         left_x =int(left_iris.x*width)
@@ -367,8 +687,39 @@ while True:
     #check keyboard input
     key =cv2.waitKey(1)&0xFF
 
+    #calibrate eye centers
+    if key ==ord("c"):
+
+        if (
+            pose_ready and
+            current_left_eye_pixel is not None and
+            current_right_eye_pixel is not None
+        ):
+
+            #convert left eye center into face coordinates
+            left_eye_center_face =pixel_to_face_plane(
+                current_left_eye_pixel,
+                EYE_DEPTH,
+                rotation_matrix,
+                translation_vector,
+                camera_matrix
+            )
+
+            #convert right eye center into face coordinates
+            right_eye_center_face =pixel_to_face_plane(
+                current_right_eye_pixel,
+                EYE_DEPTH,
+                rotation_matrix,
+                translation_vector,
+                camera_matrix
+            )
+
+            print("\neye centers calibrated")
+            print("left eye:",left_eye_center_face)
+            print("right eye:",right_eye_center_face)
+
     #save calibration point
-    if key ==ord("1"):
+    elif key ==ord("1"):
         calibration_points[1] =(smooth_horizontal,smooth_vertical)
         print("saved quadrant 1:",calibration_points[1])
 
@@ -383,6 +734,7 @@ while True:
     elif key ==ord("4"):
         calibration_points[4] =(smooth_horizontal,smooth_vertical)
         print("saved quadrant 4:",calibration_points[4])
+
 
     #press q to quit
     elif key ==ord("q"):
