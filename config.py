@@ -39,6 +39,9 @@ NOSE_INDICES =[
     3,248
 ]
 
+#corner calibration settings
+CALIBRATION_SAMPLE_COUNT =15
+
 #gaze smoothing settings
 GAZE_FILTER_LENGTH =8
 
@@ -49,8 +52,8 @@ GAZE_RAY_LENGTH =180.0
 BASE_EYE_RADIUS =20.0
 
 #webcam display size
-CAM_WIDTH =500
-CAM_HEIGHT =350
+CAM_WIDTH =350
+CAM_HEIGHT =200
 
 #webcam resolution
 CAMERA_WIDTH =1280

@@ -152,7 +152,9 @@ while True:
         SCREEN_HEIGHT,
         gaze_data,
         screen_gaze,
-        monitor_tracking.is_monitor_ready()
+        monitor_tracking.is_monitor_ready(),
+        monitor_tracking.get_calibration_target(),
+        monitor_tracking.get_calibration_progress()
     )
 
     #show display
@@ -180,52 +182,30 @@ while True:
                 current_face_scale
             )
 
-    #save monitor top-left
-    elif key ==ord("1"):
+    #start screen calibration point
+    elif key in [
+        ord("1"),
+        ord("2"),
+        ord("3"),
+        ord("4"),
+        ord("6"),
+        ord("7"),
+        ord("8"),
+        ord("9")
+    ]:
 
         if gaze_data is not None:
 
-            monitor_tracking.save_calibration_point(
-                "1",
-                gaze_data["combined_eye_center_3d"],
-                gaze_data["combined_gaze_3d"]
+            calibration_key =chr(
+                key
             )
 
-    #save monitor top-right
-    elif key ==ord("2"):
-
-        if gaze_data is not None:
-
-            monitor_tracking.save_calibration_point(
-                "2",
-                gaze_data["combined_eye_center_3d"],
-                gaze_data["combined_gaze_3d"]
-            )
-
-    #save monitor bottom-left
-    elif key ==ord("3"):
-
-        if gaze_data is not None:
-
-            monitor_tracking.save_calibration_point(
-                "3",
-                gaze_data["combined_eye_center_3d"],
-                gaze_data["combined_gaze_3d"]
-            )
-
-    #save monitor bottom-right
-    elif key ==ord("4"):
-
-        if gaze_data is not None:
-
-            monitor_tracking.save_calibration_point(
-                "4",
-                gaze_data["combined_eye_center_3d"],
-                gaze_data["combined_gaze_3d"]
+            monitor_tracking.start_calibration_point(
+                calibration_key
             )
 
     #calibrate virtual monitor
-    elif key ==ord("m"):
+    elif key ==ord("v"):
 
         if (
             gaze_data is not None and

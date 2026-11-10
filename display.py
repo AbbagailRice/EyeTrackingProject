@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import tkinter as tk
 
-from config import CAM_WIDTH,CAM_HEIGHT
+from config import CAM_WIDTH,CAM_HEIGHT, CALIBRATION_SAMPLE_COUNT
 
 
 WINDOW_NAME ="eye tracking project"
@@ -204,7 +204,9 @@ def create_display(
     screen_height,
     gaze_data,
     screen_gaze,
-    monitor_ready
+    monitor_ready,
+    calibration_target,
+    calibration_progress
 ):
 
     display =np.zeros(
@@ -398,6 +400,15 @@ def create_display(
             4
         )
 
+    #draw calibration target
+    draw_calibration_target(
+        display,
+        screen_width,
+        screen_height,
+        calibration_target,
+        calibration_progress
+    )
+
     return display
 
 
@@ -407,4 +418,116 @@ def show_display(display):
     cv2.imshow(
         WINDOW_NAME,
         display
+    )
+
+#draw monitor calibration target
+def draw_calibration_target(
+    display,
+    screen_width,
+    screen_height,
+    calibration_target,
+    calibration_progress
+):
+
+    if calibration_target is None:
+        return
+
+    #choose target positions
+    target_positions ={
+        "top_left": (
+            int(screen_width*0.10),
+            int(screen_height*0.10)
+        ),
+
+        "top_center": (
+            int(screen_width*0.50),
+            int(screen_height*0.10)
+        ),
+
+        "top_right": (
+            int(screen_width*0.90),
+            int(screen_height*0.10)
+        ),
+
+        "middle_left": (
+            int(screen_width*0.10),
+            int(screen_height*0.50)
+        ),
+
+        "center": (
+            int(screen_width*0.50),
+            int(screen_height*0.50)
+        ),
+
+        "middle_right": (
+            int(screen_width*0.90),
+            int(screen_height*0.50)
+        ),
+
+        "bottom_left": (
+            int(screen_width*0.10),
+            int(screen_height*0.90)
+        ),
+
+        "bottom_center": (
+            int(screen_width*0.50),
+            int(screen_height*0.90)
+        ),
+
+        "bottom_right": (
+            int(screen_width*0.90),
+            int(screen_height*0.90)
+        )
+    }
+
+    #make sure target exists
+    if calibration_target not in target_positions:
+        return
+
+    #get current target position
+    target_position =target_positions[
+        calibration_target
+    ]
+
+    #draw outer target circle
+    cv2.circle(
+        display,
+        target_position,
+        24,
+        (255,255,255),
+        3
+    )
+
+    #draw center dot
+    cv2.circle(
+        display,
+        target_position,
+        6,
+        (255,255,255),
+        -1
+    )
+
+    #show calibration progress
+    if calibration_progress>0:
+
+        progress_text =(
+            f"{calibration_progress}/"
+            f"{CALIBRATION_SAMPLE_COUNT}"
+        )
+
+    else:
+
+        progress_text ="look here"
+
+    cv2.putText(
+        display,
+        progress_text,
+        (
+            target_position[0]+30,
+            target_position[1]+10
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255,255,255),
+        2
     )

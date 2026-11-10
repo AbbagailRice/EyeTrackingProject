@@ -7,6 +7,8 @@ import numpy as np
 
 from config import *
 
+#reference face basis used to prevent pca axis flipping
+face_basis_reference =None
 
 #create face landmarker
 def create_face_landmarker():
@@ -37,6 +39,24 @@ def landmark_to_3d(landmark,width,height):
         landmark.y*height,
         landmark.z*width
     ],dtype =np.float64)
+
+#get stable nose points in 3d
+def get_nose_points(
+    face_landmarks,
+    width,
+    height
+):
+
+    nose_points =np.array([
+        landmark_to_3d(
+            face_landmarks[index],
+            width,
+            height
+        )
+        for index in NOSE_INDICES
+    ],dtype =np.float64)
+
+    return nose_points
 
 #calculate scale from stable nose landmarks
 def calculate_face_scale(
@@ -78,71 +98,131 @@ def calculate_face_scale(
     return total_distance/count
 
 
-#create local coordinate system from stable face landmarks
+#create stable local coordinate system from nose landmarks
 def create_face_coordinate_system(
     face_landmarks,
     width,
     height
 ):
 
-    #get stable face points
-    nose =landmark_to_3d(
-        face_landmarks[NOSE_TIP],
+    global face_basis_reference
+
+    #get stable nose region landmarks
+    nose_points =get_nose_points(
+        face_landmarks,
         width,
         height
     )
 
-    left_outer =landmark_to_3d(
-        face_landmarks[LEFT_EYE_OUTER],
+    #use average nose position as face origin
+    face_origin =np.mean(
+        nose_points,
+        axis =0
+    )
+
+    #center nose points around origin
+    centered_points =(
+        nose_points-
+        face_origin
+    )
+
+    #calculate covariance matrix
+    covariance =np.cov(
+        centered_points.T
+    )
+
+    #calculate pca axes
+    eigenvalues,eigenvectors =np.linalg.eigh(
+        covariance
+    )
+
+    #sort largest eigenvalue first
+    order =np.argsort(
+        eigenvalues
+    )[::-1]
+
+    face_basis =eigenvectors[
+        :,
+        order
+    ]
+
+    #make coordinate system right handed
+    if np.linalg.det(face_basis)<0:
+        face_basis[:,2] *=-1
+
+    #save first stable orientation as reference
+    if face_basis_reference is None:
+
+        face_basis_reference =face_basis.copy()
+
+    else:
+
+        #prevent axes from flipping between frames
+        for axis in range(3):
+
+            if np.dot(
+                face_basis[:,axis],
+                face_basis_reference[:,axis]
+            )<0:
+
+                face_basis[:,axis] *=-1
+
+        #make sure basis is still right handed
+        if np.linalg.det(face_basis)<0:
+            face_basis[:,2] *=-1
+
+        #slowly update reference orientation
+        face_basis_reference =(
+            0.95*face_basis_reference+
+            0.05*face_basis
+        )
+
+        #restore orthogonal axes
+        u,_values,vh =np.linalg.svd(
+            face_basis_reference
+        )
+
+        face_basis_reference =u@vh
+
+    return face_origin,face_basis
+
+#calculate scale from stable nose landmarks
+def calculate_face_scale(
+    face_landmarks,
+    width,
+    height
+):
+
+    #get nose points
+    nose_points =get_nose_points(
+        face_landmarks,
         width,
         height
     )
 
-    right_outer =landmark_to_3d(
-        face_landmarks[RIGHT_EYE_OUTER],
-        width,
-        height
-    )
+    total_distance =0.0
+    count =0
 
-    chin =landmark_to_3d(
-        face_landmarks[CHIN],
-        width,
-        height
-    )
+    #calculate average pairwise distance
+    for i in range(len(nose_points)):
 
-    #create horizontal face axis
-    x_axis =right_outer-left_outer
-    x_axis =x_axis/np.linalg.norm(x_axis)
+        for j in range(
+            i+1,
+            len(nose_points)
+        ):
 
-    #temporary vertical direction
-    y_temp =chin-nose
-    y_temp =y_temp/np.linalg.norm(y_temp)
+            distance =np.linalg.norm(
+                nose_points[i]-
+                nose_points[j]
+            )
 
-    #create forward face axis
-    z_axis =np.cross(
-        x_axis,
-        y_temp
-    )
+            total_distance +=distance
+            count +=1
 
-    z_axis =z_axis/np.linalg.norm(z_axis)
+    if count ==0:
+        return 1.0
 
-    #rebuild vertical axis
-    y_axis =np.cross(
-        z_axis,
-        x_axis
-    )
-
-    y_axis =y_axis/np.linalg.norm(y_axis)
-
-    #combine axes into rotation matrix
-    face_basis =np.column_stack((
-        x_axis,
-        y_axis,
-        z_axis
-    ))
-
-    return nose,face_basis
-
+    return total_distance/count
 
 #calculate head pose for debug display
 def calculate_head_pose(

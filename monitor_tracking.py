@@ -25,6 +25,40 @@ monitor_calibration ={}
 screen_x_model =None
 screen_y_model =None
 
+#current corner calibration collection
+pending_calibration_key =None
+
+#store temporary corner samples
+calibration_samples =[]
+
+#current visual calibration target
+calibration_target ="center"
+
+#corner calibration order
+calibration_order =[
+    "1",
+    "2",
+    "3",
+    "4",
+
+    "6",
+    "7",
+    "8",
+    "9"
+]
+
+CALIBRATION_TARGETS ={
+    "1": ("top_left",0.10,0.10),
+    "2": ("top_center",0.50,0.10),
+    "3": ("top_right",0.90,0.10),
+    "4": ("middle_left",0.10,0.50),
+    
+    "6": ("middle_right",0.90,0.50),
+    "7": ("bottom_left",0.10,0.90),
+    "8": ("bottom_center",0.50,0.90),
+    "9": ("bottom_right",0.90,0.90)
+}
+
 #normalize vector
 def normalize(vector):
 
@@ -66,6 +100,27 @@ def calculate_units_per_cm(
 
     return units_per_cm
 
+#start collecting samples for one calibration point
+def start_calibration_point(key):
+
+    global pending_calibration_key
+    global calibration_samples
+
+    if not monitor_ready:
+        return
+
+    #check valid calibration key
+    if key not in CALIBRATION_TARGETS:
+        return
+
+    target_name,_target_x,_target_y =CALIBRATION_TARGETS[key]
+
+    #only allow currently displayed target
+    if calibration_target !=target_name:
+        return
+
+    pending_calibration_key =key
+    calibration_samples =[]
 
 #create virtual monitor
 def calibrate_monitor(
@@ -84,6 +139,7 @@ def calibrate_monitor(
     global monitor_calibration
     global screen_x_model
     global screen_y_model
+    global calibration_target
 
     #calculate scale
     units_per_cm =calculate_units_per_cm(
@@ -193,11 +249,16 @@ def calibrate_monitor(
 
     monitor_ready =True
 
-    #save center calibration
-    monitor_calibration["center"] =(
+    #save center point from monitor calibration
+    monitor_calibration["5"] =(
+        0.5,
+        0.5,
         0.5,
         0.5
     )
+    
+    #show top-left target next
+    calibration_target ="top_left"
 
     print("\nvirtual monitor calibrated")
     print("units per cm:",units_per_cm)
@@ -300,162 +361,175 @@ def get_monitor_coordinates(
 
     return monitor_x,monitor_y
 
-#save one screen calibration point
-def save_calibration_point(
-    key,
-    gaze_origin,
-    gaze_direction
+#collect one frame for active corner calibration
+def collect_calibration_sample(
+    raw_x,
+    raw_y
 ):
 
-    if not monitor_ready:
-        print("calibrate monitor center first")
+    global pending_calibration_key
+    global calibration_samples
+    global calibration_target
+
+    #nothing currently being calibrated
+    if pending_calibration_key is None:
         return
 
-    #find current raw gaze position
-    intersection =get_gaze_intersection(
-        gaze_origin,
-        gaze_direction
+    #store current raw point
+    calibration_samples.append(
+        (
+            raw_x,
+            raw_y
+        )
     )
 
-    raw_position =get_monitor_coordinates(
-        intersection
-    )
-
-    if raw_position is None:
-        print("could not save calibration point")
+    #wait until enough frames are collected
+    if len(calibration_samples)<CALIBRATION_SAMPLE_COUNT:
         return
 
-    raw_x,raw_y =raw_position
+    #convert samples into array
+    samples =np.array(
+        calibration_samples,
+        dtype =np.float64
+    )
 
-    #save raw gaze position and known target
-    if key =="1":
+    #use median to reduce effect of jumps
+    average_x =np.median(
+        samples[:,0]
+    )
 
-        monitor_calibration["top_left"] =(
-            raw_x,
-            raw_y,
-            0.05,
-            0.05
-        )
+    average_y =np.median(
+        samples[:,1]
+    )
 
-        print(
-            "saved top-left:",
-            raw_x,
-            raw_y
-        )
+    key =pending_calibration_key
 
-    elif key =="2":
+    target_name,target_x,target_y =CALIBRATION_TARGETS[key]
 
-        monitor_calibration["top_right"] =(
-            raw_x,
-            raw_y,
-            0.95,
-            0.05
-        )
+    #save calibration point
+    monitor_calibration[key] =(
+        average_x,
+        average_y,
+        target_x,
+        target_y
+    )
 
-        print(
-            "saved top-right:",
-            raw_x,
-            raw_y
-        )
+    print(
+        "saved",
+        target_name,
+        ":",
+        average_x,
+        average_y
+    )
 
-    elif key =="3":
+    #find current point in calibration order
+    current_index =calibration_order.index(
+        key
+    )
 
-        monitor_calibration["bottom_left"] =(
-            raw_x,
-            raw_y,
-            0.05,
-            0.95
-        )
+    #move to next visual target
+    if current_index<len(calibration_order)-1:
 
-        print(
-            "saved bottom-left:",
-            raw_x,
-            raw_y
-        )
+        next_key =calibration_order[
+            current_index+1
+        ]
 
-    elif key =="4":
+        calibration_target =CALIBRATION_TARGETS[
+            next_key
+        ][0]
 
-        monitor_calibration["bottom_right"] =(
-            raw_x,
-            raw_y,
-            0.95,
-            0.95
-        )
+    else:
 
-        print(
-            "saved bottom-right:",
-            raw_x,
-            raw_y
-        )
+        calibration_target =None
 
-    #check if all calibration points exist
-    if (
-        "top_left" in monitor_calibration and
-        "top_right" in monitor_calibration and
-        "bottom_left" in monitor_calibration and
-        "bottom_right" in monitor_calibration
-    ):
+    #reset temporary samples
+    pending_calibration_key =None
+    calibration_samples =[]
+
+    #build mapping after all 9 points
+    if len(monitor_calibration) ==9:
 
         build_screen_mapping()
 
 
-#build correction from raw monitor coordinates
+#build quadratic correction from raw monitor coordinates
 def build_screen_mapping():
 
     global screen_x_model
     global screen_y_model
 
-    #get calibration points
-    points =[
-        monitor_calibration["top_left"],
-        monitor_calibration["top_right"],
-        monitor_calibration["bottom_left"],
-        monitor_calibration["bottom_right"]
+    raw_samples =[]
+    target_x =[]
+    target_y =[]
+
+    #all points used by calibration math
+    mapping_order =[
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
     ]
 
-    #raw monitor coordinates
-    raw_samples =np.array([
-        [points[0][0],points[0][1],1.0],
-        [points[1][0],points[1][1],1.0],
-        [points[2][0],points[2][1],1.0],
-        [points[3][0],points[3][1],1.0],
+    #build calibration arrays
+    for key in mapping_order:
 
-        #center is known from monitor calibration
-        [0.5,0.5,1.0]
-    ],dtype =np.float64)
+        raw_x,raw_y,screen_x,screen_y =monitor_calibration[
+            key
+        ]
 
-    #known screen x positions
-    target_x =np.array([
-        0.05,
-        0.95,
-        0.05,
-        0.95,
-        0.5
-    ],dtype =np.float64)
+        #quadratic calibration features
+        raw_samples.append([
+            raw_x,
+            raw_y,
+            raw_x*raw_y,
+            raw_x*raw_x,
+            raw_y*raw_y,
+            1.0
+        ])
 
-    #known screen y positions
-    target_y =np.array([
-        0.05,
-        0.05,
-        0.95,
-        0.95,
-        0.5
-    ],dtype =np.float64)
+        target_x.append(
+            screen_x
+        )
 
-    #fit correction model
+        target_y.append(
+            screen_y
+        )
+
+    raw_samples =np.array(
+        raw_samples,
+        dtype =np.float64
+    )
+
+    target_x =np.array(
+        target_x,
+        dtype =np.float64
+    )
+
+    target_y =np.array(
+        target_y,
+        dtype =np.float64
+    )
+
+    #fit horizontal correction
     screen_x_model,_residuals,_rank,_values =np.linalg.lstsq(
         raw_samples,
         target_x,
         rcond =None
     )
 
+    #fit vertical correction
     screen_y_model,_residuals,_rank,_values =np.linalg.lstsq(
         raw_samples,
         target_y,
         rcond =None
     )
 
-    print("\n5-point screen calibration complete")
+    print("\n9-point screen calibration complete")
 
 #map gaze ray to screen
 def map_gaze_to_screen(
@@ -487,6 +561,12 @@ def map_gaze_to_screen(
 
     raw_x,raw_y =monitor_position
 
+    #collect calibration data if a corner is active
+    collect_calibration_sample(
+        raw_x,
+        raw_y
+    )
+
     #use calibration correction if available
     if (
         screen_x_model is not None and
@@ -496,6 +576,9 @@ def map_gaze_to_screen(
         sample =np.array([
             raw_x,
             raw_y,
+            raw_x*raw_y,
+            raw_x*raw_x,
+            raw_y*raw_y,
             1.0
         ])
 
@@ -550,6 +633,9 @@ def reset_monitor():
     global monitor_calibration
     global screen_x_model
     global screen_y_model
+    global pending_calibration_key
+    global calibration_samples
+    global calibration_target
 
     monitor_corners =None
     monitor_center =None
@@ -562,3 +648,23 @@ def reset_monitor():
     screen_y_model =None
 
     monitor_ready =False
+
+    pending_calibration_key =None
+    calibration_samples =[]
+
+    calibration_target ="center"
+
+
+#get current calibration target
+def get_calibration_target():
+
+    return calibration_target
+
+
+#get calibration sample progress
+def get_calibration_progress():
+
+    if pending_calibration_key is None:
+        return 0
+
+    return len(calibration_samples)
