@@ -11,9 +11,16 @@ import gaze_tracking
 import calibration
 import display
 import monitor_tracking
+import keyboard
 
 #get screen size
 SCREEN_WIDTH,SCREEN_HEIGHT =display.get_screen_size()
+
+#build keyboard layout
+keyboard_keys =keyboard.create_keyboard(
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT
+)
 
 
 #create face landmarker
@@ -71,6 +78,8 @@ while True:
     face_basis =None
     face_landmarks =None
     current_face_scale =None
+
+    gaze_key =None
 
     #calculate gaze and head position
     if result.face_landmarks:
@@ -144,6 +153,12 @@ while True:
             SCREEN_WIDTH,
             SCREEN_HEIGHT
         )
+    
+    #find key under gaze
+    gaze_key =keyboard.get_gaze_key(
+        keyboard_keys,
+        screen_gaze
+    )
 
     #create main display
     main_display =display.create_display(
@@ -154,8 +169,11 @@ while True:
         screen_gaze,
         monitor_tracking.is_monitor_ready(),
         monitor_tracking.get_calibration_target(),
-        monitor_tracking.get_calibration_progress()
+        monitor_tracking.get_calibration_progress(),
+        keyboard_keys,
+        gaze_key
     )
+
 
     #show display
     display.show_display(

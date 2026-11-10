@@ -206,7 +206,9 @@ def create_display(
     screen_gaze,
     monitor_ready,
     calibration_target,
-    calibration_progress
+    calibration_progress,
+    keyboard_keys,
+    gaze_key
 ):
 
     display =np.zeros(
@@ -222,121 +224,121 @@ def create_display(
     center_x =screen_width//2
     center_y =screen_height//2
 
-    #draw quadrant colors
-    cv2.rectangle(
-        display,
-        (0,0),
-        (center_x,center_y),
-        (0,0,255),
-        -1
-    )
+    # #draw quadrant colors
+    # cv2.rectangle(
+    #     display,
+    #     (0,0),
+    #     (center_x,center_y),
+    #     (0,0,255),
+    #     -1
+    # )
 
-    cv2.rectangle(
-        display,
-        (center_x,0),
-        (screen_width,center_y),
-        (0,255,0),
-        -1
-    )
+    # cv2.rectangle(
+    #     display,
+    #     (center_x,0),
+    #     (screen_width,center_y),
+    #     (0,255,0),
+    #     -1
+    # )
 
-    cv2.rectangle(
-        display,
-        (0,center_y),
-        (center_x,screen_height),
-        (255,0,0),
-        -1
-    )
+    # cv2.rectangle(
+    #     display,
+    #     (0,center_y),
+    #     (center_x,screen_height),
+    #     (255,0,0),
+    #     -1
+    # )
 
-    cv2.rectangle(
-        display,
-        (center_x,center_y),
-        (screen_width,screen_height),
-        (0,255,255),
-        -1
-    )
+    # cv2.rectangle(
+    #     display,
+    #     (center_x,center_y),
+    #     (screen_width,screen_height),
+    #     (0,255,255),
+    #     -1
+    # )
 
-    #draw quadrant borders
-    cv2.rectangle(
-        display,
-        (0,0),
-        (center_x,center_y),
-        (255,255,255),
-        3
-    )
+    # #draw quadrant borders
+    # cv2.rectangle(
+    #     display,
+    #     (0,0),
+    #     (center_x,center_y),
+    #     (255,255,255),
+    #     3
+    # )
 
-    cv2.rectangle(
-        display,
-        (center_x,0),
-        (screen_width-1,center_y),
-        (255,255,255),
-        3
-    )
+    # cv2.rectangle(
+    #     display,
+    #     (center_x,0),
+    #     (screen_width-1,center_y),
+    #     (255,255,255),
+    #     3
+    # )
 
-    cv2.rectangle(
-        display,
-        (0,center_y),
-        (center_x,screen_height-1),
-        (255,255,255),
-        3
-    )
+    # cv2.rectangle(
+    #     display,
+    #     (0,center_y),
+    #     (center_x,screen_height-1),
+    #     (255,255,255),
+    #     3
+    # )
 
-    cv2.rectangle(
-        display,
-        (center_x,center_y),
-        (screen_width-1,screen_height-1),
-        (255,255,255),
-        3
-    )
+    # cv2.rectangle(
+    #     display,
+    #     (center_x,center_y),
+    #     (screen_width-1,screen_height-1),
+    #     (255,255,255),
+    #     3
+    # )
 
-    #draw quadrant numbers
-    cv2.putText(
-        display,
-        "1",
-        (center_x//2-20,center_y//2),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        2,
-        (255,255,255),
-        4
-    )
+    # #draw quadrant numbers
+    # cv2.putText(
+    #     display,
+    #     "1",
+    #     (center_x//2-20,center_y//2),
+    #     cv2.FONT_HERSHEY_SIMPLEX,
+    #     2,
+    #     (255,255,255),
+    #     4
+    # )
 
-    cv2.putText(
-        display,
-        "2",
-        (
-            center_x+center_x//2-20,
-            center_y//2
-        ),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        2,
-        (255,255,255),
-        4
-    )
+    # cv2.putText(
+    #     display,
+    #     "2",
+    #     (
+    #         center_x+center_x//2-20,
+    #         center_y//2
+    #     ),
+    #     cv2.FONT_HERSHEY_SIMPLEX,
+    #     2,
+    #     (255,255,255),
+    #     4
+    # )
 
-    cv2.putText(
-        display,
-        "3",
-        (
-            center_x//2-20,
-            center_y+center_y//2
-        ),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        2,
-        (255,255,255),
-        4
-    )
+    # cv2.putText(
+    #     display,
+    #     "3",
+    #     (
+    #         center_x//2-20,
+    #         center_y+center_y//2
+    #     ),
+    #     cv2.FONT_HERSHEY_SIMPLEX,
+    #     2,
+    #     (255,255,255),
+    #     4
+    # )
 
-    cv2.putText(
-        display,
-        "4",
-        (
-            center_x+center_x//2-20,
-            center_y+center_y//2
-        ),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        2,
-        (0,0,0),
-        4
-    )
+    # cv2.putText(
+    #     display,
+    #     "4",
+    #     (
+    #         center_x+center_x//2-20,
+    #         center_y+center_y//2
+    #     ),
+    #     cv2.FONT_HERSHEY_SIMPLEX,
+    #     2,
+    #     (0,0,0),
+    #     4
+    # )
 
     #show gaze angles
     if gaze_data is not None:
@@ -407,6 +409,12 @@ def create_display(
         screen_height,
         calibration_target,
         calibration_progress
+    )
+
+    draw_keyboard(
+        display,
+        keyboard_keys,
+        gaze_key
     )
 
     return display
@@ -531,3 +539,68 @@ def draw_calibration_target(
         (255,255,255),
         2
     )
+
+#draw gaze keyboard
+def draw_keyboard(
+    display,
+    keys,
+    gaze_key
+):
+
+    for key in keys:
+
+        x1 =key["x1"]
+        y1 =key["y1"]
+        x2 =key["x2"]
+        y2 =key["y2"]
+
+        label =key["label"]
+
+        #highlight current gaze key
+        if label ==gaze_key:
+
+            thickness =4
+
+        else:
+
+            thickness =2
+
+        #draw key
+        cv2.rectangle(
+            display,
+            (x1,y1),
+            (x2,y2),
+            (255,255,255),
+            thickness
+        )
+
+        #get text size
+        text_size,_ =cv2.getTextSize(
+            label,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            2
+        )
+
+        text_width,text_height =text_size
+
+        #center label
+        text_x =int(
+            x1+
+            ((x2-x1)-text_width)/2
+        )
+
+        text_y =int(
+            y1+
+            ((y2-y1)+text_height)/2
+        )
+
+        cv2.putText(
+            display,
+            label,
+            (text_x,text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (255,255,255),
+            2
+        )
