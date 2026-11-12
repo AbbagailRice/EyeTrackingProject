@@ -18,6 +18,9 @@ monitor_ready =False
 #scale used to create monitor
 units_per_cm =None
 
+#current corner calibration collection
+pending_calibration_key =None
+
 #store calibration samples
 monitor_calibration ={}
 
@@ -31,6 +34,9 @@ pending_calibration_key =None
 #store temporary corner samples
 calibration_samples =[]
 
+#frames collected for the virtual monitor (none when idle)
+monitor_samples =None
+
 #current visual calibration target
 calibration_target ="center"
 
@@ -40,25 +46,24 @@ calibration_order =[
     "2",
     "3",
     "4",
-
+    "5",
     "6",
     "7",
     "8",
     "9"
 ]
-
+ 
 CALIBRATION_TARGETS ={
-    "1": ("top_left",0.10,0.10),
-    "2": ("top_center",0.50,0.10),
-    "3": ("top_right",0.90,0.10),
-    "4": ("middle_left",0.10,0.50),
-    
+    "1": ("center",0.50,0.50),
+    "2": ("top_left",0.10,0.10),
+    "3": ("top_center",0.50,0.10),
+    "4": ("top_right",0.90,0.10),
+    "5": ("middle_left",0.10,0.50),
     "6": ("middle_right",0.90,0.50),
     "7": ("bottom_left",0.10,0.90),
     "8": ("bottom_center",0.50,0.90),
     "9": ("bottom_right",0.90,0.90)
 }
-
 #normalize vector
 def normalize(vector):
 
@@ -68,7 +73,6 @@ def normalize(vector):
         return vector
 
     return vector/length
-
 
 #estimate world units per centimeter
 def calculate_units_per_cm(
@@ -122,15 +126,100 @@ def start_calibration_point(key):
     pending_calibration_key =key
     calibration_samples =[]
 
+#start collecting frames for the virtual monitor
+#the user should look at the center of the screen and hold still
+def start_monitor_calibration():
+ 
+    global monitor_samples
+ 
+    monitor_samples ={
+        "origin": [],
+        "direction": [],
+        "units": []
+    }
+ 
+#true while monitor frames are being collected
+def is_monitor_calibrating():
+    return monitor_samples is not None
+ 
+ 
+#number of good monitor frames collected so far
+def get_monitor_calibration_progress():
+    if monitor_samples is None:
+        return 0
+ 
+    return len(monitor_samples["units"])
+
+#add one frame to the monitor calibration
+#returns true on the frame the monitor is created
+def update_monitor_calibration(
+    gaze_data,
+    face_landmarks,
+    width,
+    height,
+    eyes_are_open
+):
+ 
+    if monitor_samples is None:
+        return False
+ 
+    #need calibrated eyes and open eyes
+    if gaze_data is None or not eyes_are_open:
+        return False
+ 
+    monitor_samples["origin"].append(
+        np.array(gaze_data["combined_eye_center_3d"])
+    )
+ 
+    monitor_samples["direction"].append(
+        np.array(gaze_data["combined_gaze_3d"])
+    )
+ 
+    monitor_samples["units"].append(
+        calculate_units_per_cm(
+            face_landmarks,
+            width,
+            height
+        )
+    )
+ 
+    if len(monitor_samples["units"])<MONITOR_CALIBRATION_FRAMES:
+        return False
+ 
+    #median of every frame instead of one single frame
+    origin =np.median(
+        np.array(monitor_samples["origin"]),
+        axis =0
+    )
+ 
+    direction =normalize(
+        np.median(
+            np.array(monitor_samples["direction"]),
+            axis =0
+        )
+    )
+ 
+    scale =float(
+        np.median(
+            monitor_samples["units"]
+        )
+    )
+ 
+    calibrate_monitor(
+        origin,
+        direction,
+        scale
+    )
+ 
+    return True
+ 
 #create virtual monitor
 def calibrate_monitor(
     gaze_origin,
     gaze_direction,
-    face_landmarks,
-    width,
-    height
+    scale_units_per_cm
 ):
-
+ 
     global monitor_corners
     global monitor_center
     global monitor_normal
@@ -140,13 +229,12 @@ def calibrate_monitor(
     global screen_x_model
     global screen_y_model
     global calibration_target
+    global monitor_samples
+    global pending_calibration_key
+    global calibration_samples
 
-    #calculate scale
-    units_per_cm =calculate_units_per_cm(
-        face_landmarks,
-        width,
-        height
-    )
+    #store scale
+    units_per_cm =scale_units_per_cm
 
     #normalize center gaze direction
     monitor_normal =normalize(
@@ -247,6 +335,11 @@ def calibrate_monitor(
     screen_x_model =None
     screen_y_model =None
 
+    pending_calibration_key =None
+    calibration_samples =[]
+ 
+    monitor_samples =None
+
     monitor_ready =True
 
     #save center point from monitor calibration
@@ -257,8 +350,8 @@ def calibrate_monitor(
         0.5
     )
     
-    #show top-left target next
-    calibration_target ="top_left"
+    #show next target
+    calibration_target ="center"
 
     print("\nvirtual monitor calibrated")
     print("units per cm:",units_per_cm)
@@ -636,6 +729,7 @@ def reset_monitor():
     global pending_calibration_key
     global calibration_samples
     global calibration_target
+    global monitor_samples
 
     monitor_corners =None
     monitor_center =None
@@ -651,19 +745,18 @@ def reset_monitor():
 
     pending_calibration_key =None
     calibration_samples =[]
+    monitor_samples =None
 
     calibration_target ="center"
 
 
 #get current calibration target
 def get_calibration_target():
-
     return calibration_target
 
 
 #get calibration sample progress
 def get_calibration_progress():
-
     if pending_calibration_key is None:
         return 0
 

@@ -2,6 +2,13 @@
 #it opens the webcam tracks the face calculates gaze handles calibration and displays the results
 #press q to close the webcam and end the program
 
+#keys:
+#  c: calibrate eye centers (look at the camera lens, hold still)
+#  v: calibrate virtual monitor (look at the screen center, hold still)
+#  1: measure the center point (after v), then press 2 3 4 5 6 7 8 9 in order as each target appears
+#  r: rebuild the reference face shape
+#  q: quit
+
 import cv2
 import time
 
@@ -12,6 +19,9 @@ import calibration
 import display
 import monitor_tracking
 import keyboard
+import blink
+
+from config import EYE_CALIBRATION_FRAMES, MONITOR_CALIBRATION_FRAMES, FACE_REFERENCE_FRAMES
 
 #get screen size
 SCREEN_WIDTH,SCREEN_HEIGHT =display.get_screen_size()
@@ -21,7 +31,6 @@ keyboard_keys =keyboard.create_keyboard(
     SCREEN_WIDTH,
     SCREEN_HEIGHT
 )
-
 
 #create face landmarker
 landmarker =face_tracking.create_face_landmarker()
@@ -78,6 +87,7 @@ while True:
     face_basis =None
     face_landmarks =None
     current_face_scale =None
+    eyes_are_open =False
 
     gaze_key =None
 
@@ -86,60 +96,85 @@ while True:
 
         face_landmarks =result.face_landmarks[0]
         
-        #create mediapipe face coordinate system
-        face_origin,face_basis =face_tracking.create_face_coordinate_system(
+        #fit the face coordinate system to the rigid landmarks
+        face_origin,face_basis,current_face_scale =face_tracking.create_face_coordinate_system(
             face_landmarks,
             width,
             height
         )
 
-        #calculate current face scale
-        current_face_scale =face_tracking.calculate_face_scale(
-            face_landmarks,
-            width,
-            height
-        )
+        if face_basis is not None:
 
-        #get eye and iris information
-        eye_data =gaze_tracking.get_eye_data(
-            face_landmarks,
-            width,
-            height
-        )
+            #get eye and iris information
+            eye_data =gaze_tracking.get_eye_data(
+                face_landmarks,
+                width,
+                height
+            )
 
-        #get calibrated eye sphere information
-        (left_eye_center_local,
-            right_eye_center_local,
-            calibration_face_scale
-        ) =calibration.get_eye_centers()
+            #check for blinks
+            eyes_are_open =blink.eyes_open(
+                face_landmarks,
+                width,
+                height
+            )
 
-        #calculate gaze
-        gaze_data =gaze_tracking.calculate_gaze(
-            face_origin,
-            face_basis,
-            eye_data,
-            left_eye_center_local,
-            right_eye_center_local,
-            calibration_face_scale,
-            current_face_scale
-        )
+            #get calibrated eye sphere information
+            (left_eye_center_local,
+                right_eye_center_local,
+                calibration_face_scale
+            ) =calibration.get_eye_centers()
 
-        #calculate head pose
-        head_pose =face_tracking.calculate_head_pose(
-            face_landmarks,
-            width,
-            height,
-            camera_matrix,
-            distortion_coefficients
-        )
+            #calculate gaze
+            gaze_data =gaze_tracking.calculate_gaze(
+                face_origin,
+                face_basis,
+                eye_data,
+                left_eye_center_local,
+                right_eye_center_local,
+                calibration_face_scale,
+                current_face_scale
+            )
 
-        #draw tracking on webcam
-        display.draw_tracking(
-            frame,
-            eye_data,
-            gaze_data,
-            head_pose
-        )
+            #add this frame to eye calibration if it is running
+            eye_calibration_done =calibration.update_eye_calibration(
+                face_origin,
+                face_basis,
+                eye_data["left_iris_3d"],
+                eye_data["right_iris_3d"],
+                current_face_scale,
+                eyes_are_open
+            )
+
+            #clear gaze history if eye calibration just finished
+            if eye_calibration_done:
+                gaze_tracking.combined_gaze_directions.clear()
+
+            #add this frame to monitor calibration if it is running
+            monitor_tracking.update_monitor_calibration(
+                gaze_data,
+                face_landmarks,
+                width,
+                height,
+                eyes_are_open
+            )
+
+            #calculate head pose
+            head_pose =face_tracking.calculate_head_pose(
+                face_landmarks,
+                width,
+                height,
+                camera_matrix,
+                distortion_coefficients
+            )
+
+            #draw tracking on webcam
+            display.draw_tracking(
+                frame,
+                eye_data,
+                gaze_data,
+                head_pose
+            )
 
     #default mapped gaze
     screen_gaze =None
@@ -174,7 +209,6 @@ while True:
         gaze_key
     )
 
-
     #show display
     display.show_display(
         main_display
@@ -192,13 +226,7 @@ while True:
             eye_data is not None
         ):
 
-            calibration.calibrate_eye_centers(
-                face_origin,
-                face_basis,
-                eye_data["left_iris_3d"],
-                eye_data["right_iris_3d"],
-                current_face_scale
-            )
+            calibration.start_eye_calibration()
 
     #start screen calibration point
     elif key in [
@@ -206,6 +234,7 @@ while True:
         ord("2"),
         ord("3"),
         ord("4"),
+        ord("5"),
         ord("6"),
         ord("7"),
         ord("8"),
@@ -225,18 +254,14 @@ while True:
     #calibrate virtual monitor
     elif key ==ord("v"):
 
-        if (
-            gaze_data is not None and
-            face_landmarks is not None
-        ):
+        if gaze_data is not None:
 
-            monitor_tracking.calibrate_monitor(
-                gaze_data["combined_eye_center_3d"],
-                gaze_data["combined_gaze_3d"],
-                face_landmarks,
-                width,
-                height
-            )
+            monitor_tracking.start_monitor_calibration()
+
+    #rebuild reference face shape
+    elif key ==ord("r"):
+ 
+        face_tracking.reset_face_reference()
 
     #press q to quit
     elif key ==ord("q"):

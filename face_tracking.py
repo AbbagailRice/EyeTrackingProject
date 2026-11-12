@@ -7,8 +7,11 @@ import numpy as np
 
 from config import *
 
-#reference face basis used to prevent pca axis flipping
-face_basis_reference =None
+#reference rigid landmark shape
+face_reference_points =None
+
+#frames collected while building the reference
+reference_buffer =[]
 
 #create face landmarker
 def create_face_landmarker():
@@ -31,160 +34,212 @@ def create_face_landmarker():
     return landmarker
 
 
+
 #convert mediapipe landmark into 3d pixel space
 def landmark_to_3d(landmark,width,height):
-
+ 
     return np.array([
         landmark.x*width,
         landmark.y*height,
         landmark.z*width
     ],dtype =np.float64)
-
-#get stable nose points in 3d
-def get_nose_points(
+ 
+#get rigid face landmarks in 3d
+def get_rigid_points(
     face_landmarks,
     width,
     height
 ):
-
-    nose_points =np.array([
+ 
+    return np.array([
         landmark_to_3d(
             face_landmarks[index],
             width,
             height
         )
-        for index in NOSE_INDICES
+        for index in RIGID_FACE_INDICES
     ],dtype =np.float64)
 
-    return nose_points
-
-#calculate scale from stable nose landmarks
-def calculate_face_scale(
-    face_landmarks,
-    width,
-    height
+#find scale rotation and translation so that
+#target is about the scale*rotationATsource+translation
+def fit_similarity(
+    source,
+    target
 ):
-
-    #convert nose landmarks into 3d points
-    nose_points =np.array([
-        landmark_to_3d(
-            face_landmarks[index],
-            width,
-            height
+ 
+    count =len(source)
+ 
+    source_center =source.mean(axis =0)
+    target_center =target.mean(axis =0)
+ 
+    source_centered =source-source_center
+    target_centered =target-target_center
+ 
+    #cross covariance between the two point sets
+    covariance =(
+        target_centered.T@
+        source_centered
+    )/count
+ 
+    u,singular_values,vh =np.linalg.svd(
+        covariance
+    )
+ 
+    #fix any reflection so rotation is always right handed
+    sign =np.ones(3)
+ 
+    if np.linalg.det(u)*np.linalg.det(vh)<0:
+        sign[2] =-1.0
+ 
+    rotation =u@np.diag(sign)@vh
+ 
+    source_variance =(
+        source_centered**2
+    ).sum()/count
+ 
+    if source_variance<0.000001:
+        scale =1.0
+ 
+    else:
+        scale =(
+            singular_values*sign
+        ).sum()/source_variance
+ 
+    translation =(
+        target_center-
+        scale*rotation@source_center
+    )
+ 
+    return scale,rotation,translation
+ 
+#fit similarity then drop the worst landmarks and fit again
+def fit_similarity_robust(
+    source,
+    target
+):
+ 
+    scale,rotation,translation =fit_similarity(
+        source,
+        target
+    )
+ 
+    predicted =(
+        scale*(source@rotation.T)+
+        translation
+    )
+ 
+    residuals =np.linalg.norm(
+        predicted-target,
+        axis =1
+    )
+ 
+    keep_count =max(
+        6,
+        int(len(source)*POSE_INLIER_FRACTION)
+    )
+ 
+    keep =np.argsort(
+        residuals
+    )[:keep_count]
+ 
+    return fit_similarity(
+        source[keep],
+        target[keep]
+    )
+ 
+#collect frames and build the reference face shape
+def update_face_reference(points):
+ 
+    global face_reference_points
+ 
+    reference_buffer.append(points)
+ 
+    if len(reference_buffer)<FACE_REFERENCE_FRAMES:
+        return
+ 
+    #align every frame to the first one
+    anchor =reference_buffer[0]
+    aligned =[anchor]
+ 
+    for frame_points in reference_buffer[1:]:
+ 
+        scale,rotation,translation =fit_similarity_robust(
+            frame_points,
+            anchor
         )
-        for index in NOSE_INDICES
-    ])
+ 
+        aligned.append(
+            scale*(frame_points@rotation.T)+
+            translation
+        )
+ 
+    #median shape rejects bad frames
+    median_shape =np.median(
+        np.array(aligned),
+        axis =0
+    )
+ 
+    #center reference so the fitted translation is the face origin
+    face_reference_points =(
+        median_shape-
+        median_shape.mean(axis =0)
+    )
+ 
+    reference_buffer.clear()
+ 
+    print("\nface reference shape ready")
+ 
+ 
+#true once the reference shape exists
+def is_face_reference_ready():
+ 
+    return face_reference_points is not None
+ 
+ 
+#how many frames of the reference have been collected
+def get_face_reference_progress():
+ 
+    return len(reference_buffer)
+ 
+ 
+#reset the reference shape and start over
+def reset_face_reference():
+ 
+    global face_reference_points
+ 
+    face_reference_points =None
+    reference_buffer.clear()
+ 
 
-    #calculate average distance between points
-    total_distance =0.0
-    count =0
-
-    for i in range(len(nose_points)):
-
-        for j in range(i+1,len(nose_points)):
-
-            distance =np.linalg.norm(
-                nose_points[i]-
-                nose_points[j]
-            )
-
-            total_distance +=distance
-            count +=1
-
-    #avoid division by zero
-    if count ==0:
-        return 1.0
-
-    return total_distance/count
-
-
-#create stable local coordinate system from nose landmarks
+#create stable local coordinate system from rigid landmarks
+#returns face origin, face basis (rotation) and face scale
+#returns none vals while the reference shape is still being built
 def create_face_coordinate_system(
     face_landmarks,
     width,
     height
 ):
 
-    global face_basis_reference
-
     #get stable nose region landmarks
-    nose_points =get_nose_points(
+    points =get_rigid_points(
         face_landmarks,
         width,
         height
     )
 
-    #use average nose position as face origin
-    face_origin =np.mean(
-        nose_points,
-        axis =0
+    if face_reference_points is None:
+ 
+        update_face_reference(points)
+ 
+        return None,None,None
+ 
+    scale,rotation,translation =fit_similarity_robust(
+        face_reference_points,
+        points
     )
-
-    #center nose points around origin
-    centered_points =(
-        nose_points-
-        face_origin
-    )
-
-    #calculate covariance matrix
-    covariance =np.cov(
-        centered_points.T
-    )
-
-    #calculate pca axes
-    eigenvalues,eigenvectors =np.linalg.eigh(
-        covariance
-    )
-
-    #sort largest eigenvalue first
-    order =np.argsort(
-        eigenvalues
-    )[::-1]
-
-    face_basis =eigenvectors[
-        :,
-        order
-    ]
-
-    #make coordinate system right handed
-    if np.linalg.det(face_basis)<0:
-        face_basis[:,2] *=-1
-
-    #save first stable orientation as reference
-    if face_basis_reference is None:
-
-        face_basis_reference =face_basis.copy()
-
-    else:
-
-        #prevent axes from flipping between frames
-        for axis in range(3):
-
-            if np.dot(
-                face_basis[:,axis],
-                face_basis_reference[:,axis]
-            )<0:
-
-                face_basis[:,axis] *=-1
-
-        #make sure basis is still right handed
-        if np.linalg.det(face_basis)<0:
-            face_basis[:,2] *=-1
-
-        #slowly update reference orientation
-        face_basis_reference =(
-            0.95*face_basis_reference+
-            0.05*face_basis
-        )
-
-        #restore orthogonal axes
-        u,_values,vh =np.linalg.svd(
-            face_basis_reference
-        )
-
-        face_basis_reference =u@vh
-
-    return face_origin,face_basis
+ 
+    #reference is centered so translation is the face origin
+    return translation,rotation,scale
 
 #calculate scale from stable nose landmarks
 def calculate_face_scale(

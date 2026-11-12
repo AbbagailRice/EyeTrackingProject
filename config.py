@@ -32,12 +32,34 @@ RIGHT_EYE_OUTER =263
 LEFT_MOUTH =61
 RIGHT_MOUTH =291
 
-#nose landmarks used to calculate face scale
+#nose landmarks used to calculate face scale !!!(no longer used for the face frame)!!!
 NOSE_INDICES =[
     4,45,275,220,440,1,5,51,281,44,274,241,
     461,125,354,218,438,195,167,393,165,391,
     3,248
 ]
+
+#rigid landmarks for fitting the face coordinate system
+#forehead, nose bridge, nose, eye corners, temples and cheek edges
+RIGID_FACE_INDICES =[
+    10,151,9,8,168,6,197,195,5,4,1,
+    33,133,362,263,130,359,
+    127,356,234,454,
+    21,251,54,284
+]
+
+#frames used for the reference face shape at startup
+FACE_REFERENCE_FRAMES =30
+ 
+#fraction of rigid landmarks kept after dropping the worst fitting ones
+POSE_INLIER_FRACTION =0.8
+ 
+#frames collected for eye center calibration and monitor calibration
+EYE_CALIBRATION_FRAMES =45
+MONITOR_CALIBRATION_FRAMES =45
+ 
+#eye openness ratio (eyelid gap/eye width) below this counts as a blink
+BLINK_RATIO_THRESHOLD =0.20
 
 #corner calibration settings
 CALIBRATION_SAMPLE_COUNT =15
