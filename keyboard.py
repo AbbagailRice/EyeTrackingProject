@@ -23,7 +23,7 @@ def create_keyboard(
     )
 
     keyboard_top =int(
-        screen_height*0.55
+        screen_height*0.37
     )
 
     row_height =int(
@@ -31,6 +31,7 @@ def create_keyboard(
     )
 
     key_gap =8
+    row_gap =50
 
     #create letter rows
     for row_index,row in enumerate(
@@ -56,13 +57,15 @@ def create_keyboard(
 
         y1 =(
             keyboard_top+
-            row_index*row_height
+            row_index*(
+                row_height+
+                row_gap
+            )
         )
 
         y2 =(
             y1+
-            row_height-
-            key_gap
+            row_height
         )
 
         for key_index,label in enumerate(
