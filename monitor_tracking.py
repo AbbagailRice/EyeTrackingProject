@@ -52,17 +52,20 @@ calibration_order =[
     "8",
     "9"
 ]
+
+_LOW =CALIBRATION_MARGIN
+_HIGH =1.0-CALIBRATION_MARGIN
  
 CALIBRATION_TARGETS ={
     "1": ("center",0.50,0.50),
-    "2": ("top_left",0.10,0.10),
-    "3": ("top_center",0.50,0.10),
-    "4": ("top_right",0.90,0.10),
-    "5": ("middle_left",0.10,0.50),
-    "6": ("middle_right",0.90,0.50),
-    "7": ("bottom_left",0.10,0.90),
-    "8": ("bottom_center",0.50,0.90),
-    "9": ("bottom_right",0.90,0.90)
+    "2": ("top_left",_LOW,_LOW),
+    "3": ("top_center",0.50,_LOW),
+    "4": ("top_right",_HIGH,_LOW),
+    "5": ("middle_left",_LOW,0.50),
+    "6": ("middle_right",_HIGH,0.50),
+    "7": ("bottom_left",_LOW,_HIGH),
+    "8": ("bottom_center",0.50,_HIGH),
+    "9": ("bottom_right",_HIGH,_HIGH)
 }
 #normalize vector
 def normalize(vector):
@@ -754,6 +757,13 @@ def reset_monitor():
 def get_calibration_target():
     return calibration_target
 
+#get current calibration target position
+def get_calibration_target_position():
+    for target_name,target_x,target_y in CALIBRATION_TARGETS.values():
+        if target_name ==calibration_target:
+            return target_x,target_y
+
+    return None
 
 #get calibration sample progress
 def get_calibration_progress():

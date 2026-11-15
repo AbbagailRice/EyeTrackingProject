@@ -6,6 +6,7 @@ import numpy as np
 import tkinter as tk
 
 from config import CAM_WIDTH,CAM_HEIGHT, CALIBRATION_SAMPLE_COUNT
+from monitor_tracking import CALIBRATION_TARGETS
 
 
 WINDOW_NAME ="eye tracking project"
@@ -441,52 +442,14 @@ def draw_calibration_target(
         return
 
     #choose target positions
-    target_positions ={
-        "top_left": (
-            int(screen_width*0.10),
-            int(screen_height*0.10)
-        ),
+    target_positions ={}
 
-        "top_center": (
-            int(screen_width*0.50),
-            int(screen_height*0.10)
-        ),
+    for target_name,target_x,target_y in CALIBRATION_TARGETS.values():
 
-        "top_right": (
-            int(screen_width*0.90),
-            int(screen_height*0.10)
-        ),
-
-        "middle_left": (
-            int(screen_width*0.10),
-            int(screen_height*0.50)
-        ),
-
-        "center": (
-            int(screen_width*0.50),
-            int(screen_height*0.50)
-        ),
-
-        "middle_right": (
-            int(screen_width*0.90),
-            int(screen_height*0.50)
-        ),
-
-        "bottom_left": (
-            int(screen_width*0.10),
-            int(screen_height*0.90)
-        ),
-
-        "bottom_center": (
-            int(screen_width*0.50),
-            int(screen_height*0.90)
-        ),
-
-        "bottom_right": (
-            int(screen_width*0.90),
-            int(screen_height*0.90)
+        target_positions[target_name] =(
+            int(target_x*(screen_width-1)),
+            int(target_y*(screen_height-1))
         )
-    }
 
     #make sure target exists
     if calibration_target not in target_positions:
@@ -527,11 +490,25 @@ def draw_calibration_target(
 
         progress_text ="look here"
 
+    #put the text on the inner side so it dont cut off at the screen edge
+    text_size,_ =cv2.getTextSize(
+        progress_text,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        2
+    )
+
+    if target_position[0]>screen_width//2:
+        text_x =target_position[0]-30-text_size[0]
+
+    else:
+        text_x =target_position[0]+30
+
     cv2.putText(
         display,
         progress_text,
         (
-            target_position[0]+30,
+            text_x,
             target_position[1]+10
         ),
         cv2.FONT_HERSHEY_SIMPLEX,

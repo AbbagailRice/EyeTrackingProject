@@ -109,8 +109,10 @@ AXIS_POINTS =np.array([
 FOREHEAD =10
 
 #virtual monitor dimensions
-MONITOR_WIDTH_CM =60.0
-MONITOR_HEIGHT_CM =40.0
+MONITOR_WIDTH_CM =35.0
+MONITOR_HEIGHT_CM =23.0
 
 #virtual monitor distance from eyes
 MONITOR_DISTANCE_CM =50.0
+
+CALIBRATION_MARGIN = 0.03
