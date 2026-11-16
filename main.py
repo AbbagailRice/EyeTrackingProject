@@ -21,8 +21,11 @@ import monitor_tracking
 import keyboard
 import blink
 
-from config import EYE_CALIBRATION_FRAMES, MONITOR_CALIBRATION_FRAMES, FACE_REFERENCE_FRAMES, ONE_EURO_MIN_CUTOFF, ONE_EURO_BETA, ONE_EURO_D_CUTOFF
+from config import (EYE_CALIBRATION_FRAMES, MONITOR_CALIBRATION_FRAMES, FACE_REFERENCE_FRAMES, 
+    ONE_EURO_MIN_CUTOFF, ONE_EURO_BETA, ONE_EURO_D_CUTOFF, SNAP_DRAW_TO_KEY,
+    DWELL_TIME_S, DWELL_GRACE_S, DWELL_RELEASE_S, DWELL_FLASH_S)
 from one_euro import OneEuro
+from dwell_typing import DwellTyper
 
 #get screen size
 SCREEN_WIDTH,SCREEN_HEIGHT =display.get_screen_size()
@@ -50,6 +53,14 @@ screen_filter =OneEuro(
     min_cutoff =ONE_EURO_MIN_CUTOFF,
     beta =ONE_EURO_BETA,
     d_cutoff =ONE_EURO_D_CUTOFF
+)
+
+#types a key when the gaze dwells on it
+typer =DwellTyper(
+    dwell_time =DWELL_TIME_S,
+    grace_time =DWELL_GRACE_S,
+    release_time =DWELL_RELEASE_S,
+    flash_time =DWELL_FLASH_S
 )
 
 #create fullscreen window
@@ -197,11 +208,38 @@ while True:
             SCREEN_HEIGHT
         )
     
-    #find key under gaze
-    gaze_key =keyboard.get_gaze_key(
-        keyboard_keys,
-        screen_gaze
-    )
+    #snap to the nearest key when the gaze is on or near the keyboard
+    #(off until the nine-point calibration is finished)
+    display_gaze =screen_gaze
+    if (
+        monitor_tracking.is_monitor_ready() and
+        monitor_tracking.get_calibration_target() is None
+    ):
+        gaze_key,snapped_point =keyboard.snap_to_key(
+            keyboard_keys,
+            screen_gaze
+        )
+        if snapped_point is not None and SNAP_DRAW_TO_KEY:
+            display_gaze =snapped_point
+
+        #update dwell typing
+        typer.update(
+            gaze_key,
+            timestamp_ms/1000.0,
+            paused =not eyes_are_open
+        )
+
+    else:
+        keyboard.reset_snap()
+        typer.reset_dwell()
+
+        gaze_key =keyboard.get_gaze_key(
+            keyboard_keys,
+            screen_gaze
+        )
+
+    #dwell progress and typed key flash for the display
+    dwell_label,dwell_progress =typer.get_progress()
 
     #create main display
     main_display =display.create_display(
@@ -209,12 +247,16 @@ while True:
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         gaze_data,
-        screen_gaze,
+        display_gaze,
         monitor_tracking.is_monitor_ready(),
         monitor_tracking.get_calibration_target(),
         monitor_tracking.get_calibration_progress(),
         keyboard_keys,
-        gaze_key
+        gaze_key,
+        typer.text,
+        dwell_label,
+        dwell_progress,
+        typer.get_flash_label(timestamp_ms/1000.0)
     )
 
     #show display

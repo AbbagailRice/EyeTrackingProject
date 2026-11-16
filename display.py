@@ -4,17 +4,16 @@
 import cv2
 import numpy as np
 import tkinter as tk
+import time
+import keyboard
 
 from config import CAM_WIDTH,CAM_HEIGHT, CALIBRATION_SAMPLE_COUNT
 from monitor_tracking import CALIBRATION_TARGETS
 
-
 WINDOW_NAME ="eye tracking project"
-
 
 #get screen size
 def get_screen_size():
-
     root =tk.Tk()
 
     screen_width =root.winfo_screenwidth()
@@ -24,10 +23,8 @@ def get_screen_size():
 
     return screen_width,screen_height
 
-
 #create fullscreen window
 def setup_window():
-
     cv2.namedWindow(
         WINDOW_NAME,
         cv2.WINDOW_NORMAL
@@ -38,7 +35,6 @@ def setup_window():
         cv2.WND_PROP_FULLSCREEN,
         cv2.WINDOW_FULLSCREEN
     )
-
 
 #draw tracking information on webcam
 def draw_tracking(
@@ -197,7 +193,6 @@ def draw_tracking(
             2
         )
 
-
 #create main display
 def create_display(
     frame,
@@ -209,7 +204,11 @@ def create_display(
     calibration_target,
     calibration_progress,
     keyboard_keys,
-    gaze_key
+    gaze_key,
+    typed_text ="",
+    dwell_label =None,
+    dwell_progress =0.0,
+    flash_label =None
 ):
 
     display =np.zeros(
@@ -224,122 +223,6 @@ def create_display(
     #find center of display
     center_x =screen_width//2
     center_y =screen_height//2
-
-    # #draw quadrant colors
-    # cv2.rectangle(
-    #     display,
-    #     (0,0),
-    #     (center_x,center_y),
-    #     (0,0,255),
-    #     -1
-    # )
-
-    # cv2.rectangle(
-    #     display,
-    #     (center_x,0),
-    #     (screen_width,center_y),
-    #     (0,255,0),
-    #     -1
-    # )
-
-    # cv2.rectangle(
-    #     display,
-    #     (0,center_y),
-    #     (center_x,screen_height),
-    #     (255,0,0),
-    #     -1
-    # )
-
-    # cv2.rectangle(
-    #     display,
-    #     (center_x,center_y),
-    #     (screen_width,screen_height),
-    #     (0,255,255),
-    #     -1
-    # )
-
-    # #draw quadrant borders
-    # cv2.rectangle(
-    #     display,
-    #     (0,0),
-    #     (center_x,center_y),
-    #     (255,255,255),
-    #     3
-    # )
-
-    # cv2.rectangle(
-    #     display,
-    #     (center_x,0),
-    #     (screen_width-1,center_y),
-    #     (255,255,255),
-    #     3
-    # )
-
-    # cv2.rectangle(
-    #     display,
-    #     (0,center_y),
-    #     (center_x,screen_height-1),
-    #     (255,255,255),
-    #     3
-    # )
-
-    # cv2.rectangle(
-    #     display,
-    #     (center_x,center_y),
-    #     (screen_width-1,screen_height-1),
-    #     (255,255,255),
-    #     3
-    # )
-
-    # #draw quadrant numbers
-    # cv2.putText(
-    #     display,
-    #     "1",
-    #     (center_x//2-20,center_y//2),
-    #     cv2.FONT_HERSHEY_SIMPLEX,
-    #     2,
-    #     (255,255,255),
-    #     4
-    # )
-
-    # cv2.putText(
-    #     display,
-    #     "2",
-    #     (
-    #         center_x+center_x//2-20,
-    #         center_y//2
-    #     ),
-    #     cv2.FONT_HERSHEY_SIMPLEX,
-    #     2,
-    #     (255,255,255),
-    #     4
-    # )
-
-    # cv2.putText(
-    #     display,
-    #     "3",
-    #     (
-    #         center_x//2-20,
-    #         center_y+center_y//2
-    #     ),
-    #     cv2.FONT_HERSHEY_SIMPLEX,
-    #     2,
-    #     (255,255,255),
-    #     4
-    # )
-
-    # cv2.putText(
-    #     display,
-    #     "4",
-    #     (
-    #         center_x+center_x//2-20,
-    #         center_y+center_y//2
-    #     ),
-    #     cv2.FONT_HERSHEY_SIMPLEX,
-    #     2,
-    #     (0,0,0),
-    #     4
-    # )
 
     #show gaze angles
     if gaze_data is not None:
@@ -412,18 +295,27 @@ def create_display(
         calibration_progress
     )
 
+    #draw the text typed so far above the keyboard
+    draw_text_box(
+        display,
+        screen_width,
+        screen_height,
+        typed_text
+    )
+
     draw_keyboard(
         display,
         keyboard_keys,
-        gaze_key
+        gaze_key,
+        dwell_label,
+        dwell_progress,
+        flash_label
     )
 
     return display
 
-
 #show display
 def show_display(display):
-
     cv2.imshow(
         WINDOW_NAME,
         display
@@ -517,11 +409,98 @@ def draw_calibration_target(
         2
     )
 
+
+#draw the typed text in a box above the keyboard
+def draw_text_box(
+    display,
+    screen_width,
+    screen_height,
+    typed_text
+):
+
+    x1,y1,x2,y2 =keyboard.get_text_box(
+        screen_width,
+        screen_height
+    )
+
+    cv2.rectangle(
+        display,
+        (x1,y1),
+        (x2,y2),
+        (255,255,255),
+        2
+    )
+
+    font =cv2.FONT_HERSHEY_SIMPLEX
+    font_scale =1.4
+    thickness =2
+    padding =20
+
+    #show a hint on what to do until something is typed
+    if typed_text =="":
+        hint_size,_ =cv2.getTextSize(
+            "A",
+            font,
+            font_scale,
+            thickness
+        )
+
+        cv2.putText(
+            display,
+            "dwell on a key to type",
+            (
+                x1+padding,
+                y1+((y2-y1)+hint_size[1])//2
+            ), font, 0.9,
+            (120,120,120), 2
+        )
+
+        return
+
+    #drop the oldest letters until the end of the text fits in the box
+    shown =typed_text
+    max_width =(x2-x1)-2*padding
+
+    while (
+        len(shown)>0 and
+        cv2.getTextSize(
+            shown+"_",
+            font,
+            font_scale,
+            thickness
+        )[0][0]>max_width
+    ):
+
+        shown =shown[1:]
+
+    text_height =cv2.getTextSize(
+        "A",
+        font,
+        font_scale,
+        thickness
+    )[0][1]
+    
+    cv2.putText(
+        display,
+        shown,
+        (
+            x1+padding,
+            y1+((y2-y1)+text_height)//2
+        ),
+        font,
+        font_scale,
+        (255,255,255),
+        thickness
+    )
+
 #draw gaze keyboard
 def draw_keyboard(
     display,
     keys,
-    gaze_key
+    gaze_key,
+    dwell_label =None,
+    dwell_progress =0.0,
+    flash_label =None
 ):
 
     for key in keys:
@@ -535,12 +514,46 @@ def draw_keyboard(
 
         #highlight current gaze key
         if label ==gaze_key:
-
             thickness =4
 
-        else:
+            #fill the active key so it is easy to see
+            cv2.rectangle(
+                display,
+                (x1,y1),
+                (x2,y2),
+                (70,70,70),
+                -1
+            )
 
+        else:
             thickness =2
+
+        #fill from the left as the dwell timer runs
+        if (
+            label ==dwell_label and
+            dwell_progress>0
+        ):
+
+            cv2.rectangle(
+                display,
+                (x1,y1),
+                (
+                    x1+int((x2-x1)*dwell_progress),
+                    y2
+                ),
+                (0,140,0),
+                -1
+            )
+
+        #flash the key that was just typed
+        if label ==flash_label:
+            cv2.rectangle(
+                display,
+                (x1,y1),
+                (x2,y2),
+                (0,200,0),
+                -1
+            )
 
         #draw key
         cv2.rectangle(
