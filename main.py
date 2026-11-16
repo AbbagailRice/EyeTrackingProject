@@ -21,7 +21,8 @@ import monitor_tracking
 import keyboard
 import blink
 
-from config import EYE_CALIBRATION_FRAMES, MONITOR_CALIBRATION_FRAMES, FACE_REFERENCE_FRAMES
+from config import EYE_CALIBRATION_FRAMES, MONITOR_CALIBRATION_FRAMES, FACE_REFERENCE_FRAMES, ONE_EURO_MIN_CUTOFF, ONE_EURO_BETA, ONE_EURO_D_CUTOFF
+from one_euro import OneEuro
 
 #get screen size
 SCREEN_WIDTH,SCREEN_HEIGHT =display.get_screen_size()
@@ -43,6 +44,13 @@ if cap is None:
 
 #timestamp
 start_time =time.time()
+
+#smooths the final screen gaze position
+screen_filter =OneEuro(
+    min_cutoff =ONE_EURO_MIN_CUTOFF,
+    beta =ONE_EURO_BETA,
+    d_cutoff =ONE_EURO_D_CUTOFF
+)
 
 #create fullscreen window
 display.setup_window()

@@ -70,6 +70,13 @@ GAZE_FILTER_LENGTH =8
 #gaze ray length
 GAZE_RAY_LENGTH =180.0
 
+#one euro filter on the final screen position(units are pixels and seconds)
+#lower min cutoff =steadier when still, more lag
+#higher beta =follows fast eye movements sooner, more jitter
+ONE_EURO_MIN_CUTOFF =1.0
+ONE_EURO_BETA =0.002
+ONE_EURO_D_CUTOFF =1.0
+
 #approx eye sphere radius
 BASE_EYE_RADIUS =20.0
 
